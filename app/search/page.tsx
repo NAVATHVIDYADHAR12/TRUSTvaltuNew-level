@@ -1345,14 +1345,14 @@ export default function SearchPage() {
                         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
                             <div className="bg-[#111] w-full max-w-2xl rounded-3xl border border-white/10 overflow-hidden shadow-2xl h-[600px] flex flex-col relative">
                                 <div className="p-6 border-b border-white/10 flex justify-between items-center bg-[#151515]">
-                                    <h2 className="text-xl font-bold flex items-center gap-2">
+                                    <h2 className="text-xl font-bold flex items-center gap-2 text-sky-300">
                                         <MessageSquare className="w-5 h-5 text-blue-500" />
                                         Chat with {selectedProfile?.name}
                                     </h2>
                                     <div className="flex gap-3">
                                         <button
                                             onClick={() => handleExportChat()}
-                                            className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs border border-white/10 transition-colors"
+                                            className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs border border-white/10 transition-colors text-sky-300"
                                         >
                                             <Download className="w-3 h-3" />
                                             Export History
