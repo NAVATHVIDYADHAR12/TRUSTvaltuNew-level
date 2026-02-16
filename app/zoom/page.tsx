@@ -138,7 +138,7 @@ export default function ZoomLobbyPage() {
                             </p>
                             <button
                                 onClick={handleCreateRoom}
-                                className="w-full py-4 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl font-bold text-lg hover:shadow-lg hover:shadow-purple-600/25 transition-all flex items-center justify-center gap-2"
+                                className="w-full py-4 bg-gradient-to-r from-green-400 via-cyan-400 to-cyan-500 rounded-xl font-bold text-lg hover:shadow-lg hover:shadow-cyan-400/25 transition-all flex items-center justify-center gap-2"
                             >
                                 <Video className="w-5 h-5" />
                                 Create Room
