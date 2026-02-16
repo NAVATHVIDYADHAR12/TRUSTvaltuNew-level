@@ -69,7 +69,13 @@ export default function Admin() {
                 <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
                     <div className="flex items-center gap-4">
                         <button
-                            onClick={() => window.history.back()}
+                            onClick={() => {
+                                if (window.history.length > 1) {
+                                    window.history.back();
+                                } else {
+                                    router.push('/');
+                                }
+                            }}
                             className="p-2 hover:bg-white/10 rounded-full text-zinc-400 hover:text-white transition-colors"
                             title="Go Back"
                         >
