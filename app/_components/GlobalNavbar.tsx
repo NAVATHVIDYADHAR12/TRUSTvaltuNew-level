@@ -2,10 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 import { Shield, User, LogIn, LayoutDashboard, X, Video, Eye, EyeOff, Monitor, Lock, Unlock, VideoOff, Tv, Fingerprint, Activity } from 'lucide-react';
 
 const GlobalNavbar = () => {
     const [isDRMModalOpen, setIsDRMModalOpen] = useState(false);
+    const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+    const [visible, setVisible] = useState(true);
+    const [lastScrollY, setLastScrollY] = useState(0);
+    const [scrolled, setScrolled] = useState(false);
     const [drmSettings, setDrmSettings] = useState({
         screenshotBlocking: true,
         tabFocusProtection: true,
@@ -40,6 +45,34 @@ const GlobalNavbar = () => {
         window.dispatchEvent(new CustomEvent('drmSettingsChanged', { detail: newSettings }));
     };
 
+    // Scroll tracking for hide/show and glassmorphism
+    useEffect(() => {
+        const handleScroll = () => {
+            const currentScrollY = window.scrollY;
+
+            // Update scrolled state for background
+            setScrolled(currentScrollY > 20);
+
+            // Hide navbar when scrolling down, show when scrolling up
+            if (currentScrollY > lastScrollY && currentScrollY > 100) {
+                setVisible(false);
+            } else if (currentScrollY < lastScrollY) {
+                setVisible(true);
+            }
+
+            setLastScrollY(currentScrollY);
+        };
+
+        window.addEventListener('scroll', handleScroll);
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, [lastScrollY]);
+
+    // Mouse tracking for liquid glass bubble
+    const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    };
+
     // Close modal and dispatch event for immediate refresh in Zoom room
     const closeModal = () => {
         setIsDRMModalOpen(false);
@@ -49,9 +82,28 @@ const GlobalNavbar = () => {
 
     return (
         <>
-            <nav className="h-20 border-b border-white/5 bg-[#0a0a0f]/95 backdrop-blur-xl flex items-center justify-between px-4 z-50 fixed w-full top-0 left-0 transition-all duration-300">
+            <nav
+                onMouseMove={handleMouseMove}
+                className={`h-20 border-b flex items-center justify-between px-4 z-50 fixed w-full top-0 left-0 transition-all duration-500 ease-in-out ${scrolled
+                        ? 'bg-[#0a0a0f]/80 backdrop-blur-xl border-white/5'
+                        : 'bg-[#0a0a0f]/95 backdrop-blur-xl border-white/5'
+                    } ${visible ? 'translate-y-0' : '-translate-y-full'}`}
+            >
+                {/* Liquid Glass Bubble Effect */}
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                    <motion.div
+                        className="absolute bg-brand-cyan/20 rounded-full blur-[40px] mix-blend-screen"
+                        animate={{
+                            x: mousePos.x - 75,
+                            y: mousePos.y - 75,
+                            opacity: 1
+                        }}
+                        transition={{ type: "tween", ease: "backOut", duration: 0.5 }}
+                        style={{ width: 150, height: 150 }}
+                    />
+                </div>
                 {/* Left: Logo & Primary Nav */}
-                <div className="flex items-center gap-8">
+                <div className="flex items-center gap-8 relative z-10">
                     {/* Logo */}
                     <Link href="/" className="flex items-center gap-2 group py-2">
                         <img
