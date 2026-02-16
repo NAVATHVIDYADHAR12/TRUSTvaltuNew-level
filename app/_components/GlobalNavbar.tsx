@@ -85,8 +85,8 @@ const GlobalNavbar = () => {
             <nav
                 onMouseMove={handleMouseMove}
                 className={`h-20 border-b flex items-center justify-between px-4 z-50 fixed w-full top-0 left-0 transition-all duration-500 ease-in-out ${scrolled
-                        ? 'bg-[#0a0a0f]/80 backdrop-blur-xl border-white/5'
-                        : 'bg-[#0a0a0f]/95 backdrop-blur-xl border-white/5'
+                    ? 'bg-[#0a0a0f]/80 backdrop-blur-xl border-white/5'
+                    : 'bg-[#0a0a0f]/95 backdrop-blur-xl border-white/5'
                     } ${visible ? 'translate-y-0' : '-translate-y-full'}`}
             >
                 {/* Liquid Glass Bubble Effect */}
@@ -107,7 +107,7 @@ const GlobalNavbar = () => {
                     {/* Logo */}
                     <Link href="/" className="flex items-center gap-2 group py-2">
                         <img
-                            src="/NewProject.png"
+                            src="/TheLOGO!.png"
                             alt="CreatorSecure"
                             className="w-auto h-[45px] object-contain hover:scale-105 transition-transform duration-500"
                         />
