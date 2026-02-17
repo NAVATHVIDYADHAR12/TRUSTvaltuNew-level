@@ -2,7 +2,7 @@
 const DB_NAME = 'CreatorSecureDB';
 const STORE_NAME = 'zoomRecordings';
 const TRASH_STORE_NAME = 'recycleBin';
-const DB_VERSION = 2; // Bumped version for trash store
+const DB_VERSION = 3; // Bump to match ChatDB
 
 export interface ZoomRecording {
     id: string;
@@ -15,7 +15,7 @@ export interface ZoomRecording {
     deletedAt?: number; // Timestamp when moved to trash
 }
 
-const openDB = (): Promise<IDBDatabase> => {
+export const openDB = (): Promise<IDBDatabase> => {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -30,6 +30,10 @@ const openDB = (): Promise<IDBDatabase> => {
             // Add Recycle Bin store
             if (!db.objectStoreNames.contains(TRASH_STORE_NAME)) {
                 db.createObjectStore(TRASH_STORE_NAME, { keyPath: 'id' });
+            }
+            // Add Chat History store (ensure compatibility with chatDB)
+            if (!db.objectStoreNames.contains('chatHistory')) {
+                db.createObjectStore('chatHistory', { keyPath: 'id' });
             }
         };
     });

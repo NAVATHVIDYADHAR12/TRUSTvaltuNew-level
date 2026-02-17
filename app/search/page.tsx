@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import GlobalNavbar from '../_components/GlobalNavbar';
 import { Search, Video, Users, MessageSquare, Download, Mic, Shield, Building2, GraduationCap, Briefcase, History, UserPlus, FileVideo, FileText, CheckCircle, Plus, X, DollarSign, Play, Trash2, RotateCcw, Trash, Edit3, Camera, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getAllRecordings, deleteRecording, getTrashRecordings, restoreFromTrash, permanentlyDelete, emptyTrash, ZoomRecording } from '../zoom/_utils/recordingsDB';
+import { saveChatSession, getAllChatSessions, deleteChatSession, ChatSession, ChatMessage, calculateChatSize } from '../zoom/_utils/chatDB';
 import { mockSession } from '../../lib/mock-auth';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, Send } from 'lucide-react';
 
 // Types
 type TabType = 'client' | 'freelancer' | 'student_agency' | 'industrial_agency' | 'join' | 'history';
@@ -26,21 +27,18 @@ interface Profile {
     bio?: string;
 }
 
+// Unified History Item for UI
 interface HistoryItem {
     id: string;
     type: 'video' | 'chat';
     partner: string;
     date: string;
-    duration?: string;
-    size?: string;
+    duration?: string; // Video only
+    size: string;
+    blob?: Blob; // Video only
+    messages?: ChatMessage[]; // Chat only
+    timestamp: number;
 }
-
-const MOCK_HISTORY: HistoryItem[] = [
-    { id: '1', type: 'video', partner: 'Sarah Chen', date: 'Oct 24, 2023', duration: '45 min', size: '240 MB' },
-    { id: '2', type: 'chat', partner: 'TechFlow Solutions', date: 'Oct 23, 2023', size: '12 KB' },
-    { id: '3', type: 'video', partner: 'UniCode Agency', date: 'Oct 20, 2023', duration: '22 min', size: '115 MB' },
-    { id: '4', type: 'chat', partner: 'Alex Rivera', date: 'Oct 18, 2023', size: '8 KB' },
-];
 
 export default function SearchPage() {
     const session = mockSession; // Use mock session
@@ -56,10 +54,17 @@ export default function SearchPage() {
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
+
+    // Data States
     const [zoomRecordings, setZoomRecordings] = useState<ZoomRecording[]>([]);
     const [trashRecordings, setTrashRecordings] = useState<ZoomRecording[]>([]);
+    const [chatHistory, setChatHistory] = useState<ChatSession[]>([]);
+
+    const [activeChatMessages, setActiveChatMessages] = useState<ChatMessage[]>([]);
+    const [chatInput, setChatInput] = useState('');
+
     const [playingVideo, setPlayingVideo] = useState<string | null>(null);
-    const [historyView, setHistoryView] = useState<'recordings' | 'trash'>('recordings');
+    const [historyView, setHistoryView] = useState<'recordings' | 'chats' | 'trash'>('recordings');
 
     // Mock Profiles Data
     const MOCK_PROFILES: Profile[] = [
@@ -246,21 +251,42 @@ export default function SearchPage() {
         setProfiles(MOCK_PROFILES);
     }, []);
 
-    // Fetch Zoom recordings and trash from IndexedDB
-    useEffect(() => {
-        const fetchRecordings = async () => {
-            try {
-                const recordings = await getAllRecordings();
-                setZoomRecordings(recordings);
-                const trash = await getTrashRecordings();
-                setTrashRecordings(trash);
-            } catch (err) {
-                console.error('Failed to fetch recordings:', err);
-            }
-        };
+    const searchParams = useSearchParams();
 
+    // Fetch Zoom recordings, trash, and chat history from IndexedDB
+    const fetchData = async () => {
+        try {
+            console.log('Fetching history data...');
+            const recordings = await getAllRecordings();
+            console.log('Fetched recordings:', recordings.length);
+            setZoomRecordings(recordings);
+
+            const trash = await getTrashRecordings();
+            setTrashRecordings(trash);
+
+            const chats = await getAllChatSessions();
+            setChatHistory(chats);
+        } catch (err) {
+            console.error('Failed to fetch data:', err);
+        }
+    };
+
+    // Handle Tab Change via URL
+    useEffect(() => {
+        const tab = searchParams.get('tab');
+        if (tab === 'history') {
+            setActiveTab('history');
+            fetchData();
+        } else if (tab === 'client' || tab === 'freelancer' || tab === 'join') {
+            // @ts-ignore
+            setActiveTab(tab);
+        }
+    }, [searchParams]);
+
+    // Initial fetch if already on history tab
+    useEffect(() => {
         if (activeTab === 'history') {
-            fetchRecordings();
+            fetchData();
         }
     }, [activeTab, historyView]);
 
@@ -588,14 +614,78 @@ export default function SearchPage() {
         }
     };
 
-    const handleExportChat = (partnerName?: string) => {
-        const name = partnerName || selectedProfile?.name || 'User';
-        const chatHistory = `Transcript...`; // Keeping it short for brevity as logic is same
-        const blob = new Blob([chatHistory], { type: 'text/plain' });
+    // Handlers
+    const handleSendMessage = async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        if (!chatInput.trim()) return;
+
+        const newUserMsg: ChatMessage = {
+            sender: 'user',
+            text: chatInput,
+            timestamp: Date.now()
+        };
+
+        const updatedMessages = [...activeChatMessages, newUserMsg];
+        setActiveChatMessages(updatedMessages);
+        setChatInput('');
+
+        // Simulate partner response
+        setTimeout(() => {
+            const partnerMsg: ChatMessage = {
+                sender: 'partner',
+                text: `Thanks for your message: "${newUserMsg.text}"! This is an automated response simulation.`,
+                timestamp: Date.now()
+            };
+            setActiveChatMessages(prev => [...prev, partnerMsg]);
+        }, 1500);
+    };
+
+    const handleChatClose = async () => {
+        if (activeChatMessages.length > 0 && selectedProfile) {
+            // Save session before closing
+            const session: ChatSession = {
+                id: Date.now().toString(),
+                partnerId: selectedProfile.id,
+                partnerName: selectedProfile.name,
+                date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                timestamp: Date.now(),
+                messages: activeChatMessages,
+                size: calculateChatSize(activeChatMessages) // now imported
+            };
+            await saveChatSession(session);
+            // Refresh history
+            const chats = await getAllChatSessions();
+            setChatHistory(chats);
+        }
+        setIsChatOpen(false);
+        setActiveChatMessages([]);
+    };
+
+    const handleExportChat = (sessionToExport?: ChatSession) => {
+        // If exporting currently open chat
+        let messages = activeChatMessages;
+        let partnerName = selectedProfile?.name || 'User';
+
+        // If exporting from history (sessionToExport provided)
+        if (sessionToExport) {
+            messages = sessionToExport.messages;
+            partnerName = sessionToExport.partnerName;
+        }
+
+        if (messages.length === 0) {
+            alert("No messages to export.");
+            return;
+        }
+
+        const transcript = messages.map(m =>
+            `[${new Date(m.timestamp).toLocaleTimeString()}] ${m.sender === 'user' ? 'You' : partnerName}: ${m.text}`
+        ).join('\n\n');
+
+        const blob = new Blob([transcript], { type: 'text/plain' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `chat-${name}.txt`;
+        a.download = `chat-${partnerName.replace(/\s+/g, '_')}-${new Date().toISOString().slice(0, 10)}.txt`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -609,9 +699,18 @@ export default function SearchPage() {
             return (
                 <div className="space-y-6">
                     <div className="flex items-center justify-between">
-                        <h2 className="text-2xl font-bold">Interaction History</h2>
+                        <div className="flex items-center gap-3">
+                            <h2 className="text-2xl font-bold">Interaction History</h2>
+                            <button
+                                onClick={fetchData}
+                                className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white"
+                                title="Refresh History"
+                            >
+                                <RotateCcw className="w-4 h-4" />
+                            </button>
+                        </div>
 
-                        {/* Toggle: Recordings vs Recycle Bin */}
+                        {/* Toggle: Recordings vs Chats vs Recycle Bin */}
                         <div className="flex items-center gap-2 bg-[#111] p-1 rounded-xl border border-white/10">
                             <button
                                 onClick={() => setHistoryView('recordings')}
@@ -622,6 +721,16 @@ export default function SearchPage() {
                             >
                                 <Video className="w-4 h-4" />
                                 Recordings ({zoomRecordings.length})
+                            </button>
+                            <button
+                                onClick={() => setHistoryView('chats')}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${historyView === 'chats'
+                                    ? 'bg-blue-600 text-white shadow-[0_0_15px_rgba(59,130,246,0.5)]'
+                                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                    }`}
+                            >
+                                <MessageSquare className="w-4 h-4" />
+                                Chats ({chatHistory.length})
                             </button>
                             <button
                                 onClick={() => setHistoryView('trash')}
@@ -700,6 +809,67 @@ export default function SearchPage() {
                                     </motion.div>
                                 ))}
                             </div>
+                        </div>
+                    )}
+
+                    {/* Chat History Section */}
+                    {historyView === 'chats' && (
+                        <div className="mb-8">
+                            <h3 className="text-lg font-semibold text-blue-400 mb-4 flex items-center gap-2">
+                                <MessageSquare className="w-5 h-5" />
+                                Chat Sessions ({chatHistory.length})
+                            </h3>
+                            {chatHistory.length > 0 ? (
+                                <div className="grid gap-4">
+                                    {chatHistory.map((chat) => (
+                                        <motion.div
+                                            key={chat.id}
+                                            initial={{ opacity: 0, x: -20 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            className="bg-[#111] p-4 rounded-xl border border-blue-500/20 hover:bg-white/5 transition-colors"
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="p-3 rounded-lg bg-blue-500/10 text-blue-400">
+                                                        <MessageSquare className="w-6 h-6" />
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="font-bold text-white">Chat with {chat.partnerName}</h3>
+                                                        <p className="text-sm text-gray-500">{chat.date} • {chat.messages.length} messages • {chat.size}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={() => handleExportChat(chat)}
+                                                        className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-lg text-sm hover:bg-white/10 border border-white/10 transition-colors"
+                                                    >
+                                                        <Download className="w-4 h-4" />
+                                                        Export
+                                                    </button>
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (confirm('Delete this chat history?')) {
+                                                                await deleteChatSession(chat.id);
+                                                                setChatHistory(prev => prev.filter(c => c.id !== chat.id));
+                                                            }
+                                                        }}
+                                                        className="p-2 bg-red-600/10 text-red-400 rounded-lg hover:bg-red-600/20 border border-red-500/20 transition-colors"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-center py-12 bg-[#111] rounded-2xl border border-white/5">
+                                    <MessageSquare className="w-16 h-16 mx-auto mb-4 text-gray-600" />
+                                    <h3 className="text-xl font-bold text-gray-400 mb-2">No Chats Yet</h3>
+                                    <p className="text-gray-500">Start a chat with a profile to save conversations here.</p>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -783,49 +953,7 @@ export default function SearchPage() {
                         </div>
                     )}
 
-                    {/* Mock History Section - Only show in recordings view */}
-                    {historyView === 'recordings' && (
-                        <div>
-                            <h3 className="text-lg font-semibold text-gray-400 mb-4 flex items-center gap-2">
-                                <History className="w-5 h-5" />
-                                Other Interactions
-                            </h3>
-                            <div className="grid gap-4">
-                                {MOCK_HISTORY.map((item) => (
-                                    <motion.div
-                                        key={item.id}
-                                        initial={{ opacity: 0, x: -20 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        className="bg-[#111] p-4 rounded-xl border border-white/5 flex items-center justify-between hover:bg-[#1a1a1a] transition-colors group"
-                                    >
-                                        <div className="flex items-center gap-4">
-                                            <div className={`p-3 rounded-lg ${item.type === 'video' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}`}>
-                                                {item.type === 'video' ? <FileVideo className="w-6 h-6" /> : <FileText className="w-6 h-6" />}
-                                            </div>
-                                            <div>
-                                                <h3 className="font-bold text-white">{item.type === 'video' ? 'Video Session' : 'Chat Log'} with {item.partner}</h3>
-                                                <p className="text-sm text-gray-500">{item.date} • {item.type === 'video' ? item.duration : 'Transcript'} • {item.size}</p>
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => handleExportChat(item.partner)}
-                                            className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-lg text-sm hover:bg-white/10 border border-white/10 transition-colors"
-                                        >
-                                            <Download className="w-4 h-4" />
-                                            Download to Device
-                                        </button>
-                                    </motion.div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {historyView === 'recordings' && zoomRecordings.length === 0 && MOCK_HISTORY.length === 0 && (
-                        <div className="text-center py-12 text-gray-500">
-                            <History className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                            <p>No interaction history yet. Start a Zoom call to record sessions!</p>
-                        </div>
-                    )}
+                    {/* Empty Recordings State used to be here - removed duplicate */}
                 </div>
             );
         }
@@ -970,7 +1098,6 @@ export default function SearchPage() {
             </div>
         );
     };
-
 
     return (
         <div className={`min-h-screen font-sans selection:bg-cyan-500/30 transition-colors duration-300 ${isDayMode ? 'bg-[#f0f2f5] text-gray-900' : 'bg-[#0a0a0f] text-white'}`}>
@@ -1357,30 +1484,55 @@ export default function SearchPage() {
                                             <Download className="w-3 h-3" />
                                             Export History
                                         </button>
-                                        <button onClick={() => setIsChatOpen(false)} className="text-gray-400 hover:text-white transition-colors">Close</button>
+                                        <button onClick={handleChatClose} className="text-gray-400 hover:text-white transition-colors">Close</button>
                                     </div>
                                 </div>
                                 <div className="flex-1 p-6 overflow-y-auto space-y-4 bg-[#0a0a0f]">
-                                    <div className="flex flex-col gap-1">
-                                        <div className="bg-blue-600/20 text-blue-100 p-3 rounded-2xl rounded-tl-none self-start max-w-[80%] border border-blue-600/20">
-                                            Hello! I'm interested in your services.
+                                    {activeChatMessages.length > 0 ? (
+                                        activeChatMessages.map((msg, idx) => (
+                                            <div key={idx} className="flex flex-col gap-1">
+                                                <div
+                                                    className={`p-3 rounded-2xl max-w-[80%] border ${msg.sender === 'user'
+                                                        ? 'bg-blue-600/20 text-blue-100 rounded-br-none self-end border-blue-600/20'
+                                                        : 'bg-white/10 text-white rounded-bl-none self-start border-white/10'
+                                                        }`}
+                                                >
+                                                    {msg.text}
+                                                </div>
+                                                <span className={`text-[10px] text-gray-500 ${msg.sender === 'user' ? 'self-end mr-2' : 'ml-2'}`}>
+                                                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="h-full flex flex-col items-center justify-center text-gray-500 opacity-50">
+                                            <MessageSquare className="w-12 h-12 mb-2" />
+                                            <p>Start a secure conversation...</p>
                                         </div>
-                                        <span className="text-[10px] text-gray-500 ml-2">10:00 AM</span>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                        <div className="bg-white/10 text-white p-3 rounded-2xl rounded-tr-none self-end max-w-[80%] border border-white/10">
-                                            Hi! I'd be happy to help. What project are you working on?
-                                        </div>
-                                        <span className="text-[10px] text-gray-500 self-end mr-2">10:02 AM</span>
-                                    </div>
+                                    )}
                                 </div>
-                                <div className="p-4 border-t border-white/10 bg-[#151515]">
+                                <form
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+                                        handleSendMessage();
+                                    }}
+                                    className="p-4 border-t border-white/10 bg-[#151515] flex gap-2"
+                                >
                                     <input
                                         type="text"
+                                        value={chatInput}
+                                        onChange={(e) => setChatInput(e.target.value)}
                                         placeholder="Type a secure message..."
-                                        className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500/50 transition-all"
+                                        className="flex-1 bg-black/50 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500/50 transition-all text-white"
                                     />
-                                </div>
+                                    <button
+                                        type="submit"
+                                        disabled={!chatInput.trim()}
+                                        className="p-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-colors text-white"
+                                    >
+                                        <Send className="w-5 h-5" />
+                                    </button>
+                                </form>
                             </div>
                         </div>
                     )

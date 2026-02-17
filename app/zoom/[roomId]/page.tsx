@@ -400,7 +400,7 @@ export default function MeetingRoomPage() {
             recordingStartTimeRef.current = Date.now();
 
             const mediaRecorder = new MediaRecorder(stream, {
-                mimeType: 'video/webm;codecs=vp9'
+                mimeType: 'video/webm'
             });
 
             mediaRecorder.ondataavailable = (event) => {
@@ -411,7 +411,14 @@ export default function MeetingRoomPage() {
 
             mediaRecorder.onstop = async () => {
                 const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
-                await handleSaveRecording(blob);
+                if (blob.size > 0) {
+                    await handleSaveRecording(blob);
+                } else {
+                    console.warn('Recording stopped with empty blob.');
+                    if (isEndingCallRef.current) {
+                        router.push('/search?tab=history');
+                    }
+                }
             };
 
             mediaRecorder.start(1000); // Collect data every second
@@ -423,17 +430,39 @@ export default function MeetingRoomPage() {
 
     const stopRecording = () => {
         if (mediaRecorderRef.current && isRecording) {
+            // Request final data if possible
+            if (mediaRecorderRef.current.state === 'recording') {
+                mediaRecorderRef.current.requestData();
+            }
             mediaRecorderRef.current.stop();
             setIsRecording(false);
         }
     };
 
+    const [isEndingCall, setIsEndingCall] = useState(false);
+    const isEndingCallRef = useRef(false);
+    const recordingTimeRef = useRef(0);
+
+    // Sync ref with state
+    useEffect(() => {
+        isEndingCallRef.current = isEndingCall;
+    }, [isEndingCall]);
+
+    useEffect(() => {
+        recordingTimeRef.current = recordingTime;
+    }, [recordingTime]);
+
+    // ... existing code ...
+
     const handleSaveRecording = async (blob: Blob) => {
+        // Use Ref for time to ensure we have the latest value even in stale closures
+        const duration = formatTime(recordingTimeRef.current);
+
         const recording: ZoomRecording = {
             id: Date.now().toString(),
             roomId,
             date: new Date().toLocaleString(),
-            duration: formatTime(recordingTime),
+            duration: duration,
             size: `${(blob.size / (1024 * 1024)).toFixed(2)} MB`,
             blob,
             timestamp: Date.now()
@@ -443,8 +472,14 @@ export default function MeetingRoomPage() {
             // Save to IndexedDB
             await saveRecording(recording);
             setRecordingSaved(true);
-            setTimeout(() => setRecordingSaved(false), 3000);
             console.log('Recording saved to History:', recording.id);
+
+            // Use Ref for ending call check to avoid stale closure issues
+            if (isEndingCallRef.current) {
+                setTimeout(() => router.push('/search?tab=history'), 1000); // Small delay to show toast
+            } else {
+                setTimeout(() => setRecordingSaved(false), 3000);
+            }
         } catch (err) {
             console.error('Failed to save recording:', err);
             // Fallback: trigger download
@@ -456,8 +491,14 @@ export default function MeetingRoomPage() {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+
+            if (isEndingCallRef.current) {
+                router.push('/search?tab=history');
+            }
         }
     };
+
+
 
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
@@ -476,10 +517,22 @@ export default function MeetingRoomPage() {
         if (stream) {
             stream.getTracks().forEach(track => track.stop());
         }
+
         if (isRecording) {
+            setIsEndingCall(true);
+            isEndingCallRef.current = true; // Immediate ref update for safety
             stopRecording();
+
+            // Failsafe: Force navigation after 3 seconds if saving hangs/fails
+            setTimeout(() => {
+                if (window.location.pathname.includes('/zoom/')) {
+                    console.warn('End call timeout reached - forcing navigation');
+                    router.push('/search?tab=history');
+                }
+            }, 3000);
+        } else {
+            router.push('/search?tab=history');
         }
-        router.push('/search?tab=history');
     };
 
     return (
